@@ -1,4 +1,4 @@
-import { FloatingAssistant } from "@/components/floating-assistant"
+import FloatingAssistant from "@/components/floating-assistant"
 
 export default function Page() {
   return (

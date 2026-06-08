@@ -1,106 +1,112 @@
 "use client"
 
-import { AnimatePresence, motion } from "framer-motion"
-import { useCallback, useRef, useState } from "react"
-import { CatAvatar, type CatState } from "./cat-avatar"
-import { PopupCard } from "./popup-card"
+import { Canvas, useFrame } from "@react-three/fiber"
+import { useGLTF } from "@react-three/drei"
+import { useRef, useState } from "react"
+import * as THREE from "three"
 
-const DEMO_RAW =
-  "um so basically i was wondering if you could maybe help me write a really nice and professional email to my boss asking if it would be possible to take next friday off because i have a family thing going on"
+type StateType = "idle" | "thinking" | "listening"
 
-const DEMO_OPTIMIZED =
-  "Write a professional email to my manager requesting next Friday off for a family commitment."
+function CatModel({ state }: { state: StateType }) {
+  const { scene } = useGLTF("/models/cartoon_cat.glb")
+  const ref = useRef<THREE.Group>(null)
 
-export function FloatingAssistant() {
-  const [open, setOpen] = useState(false)
-  const [state, setState] = useState<CatState>("sleep")
-  const [rawPrompt, setRawPrompt] = useState("")
-  const [optimized, setOptimized] = useState("")
-  const [stats, setStats] = useState({ before: 0, after: 0 })
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([])
+  useFrame(() => {
+    if (!ref.current) return
 
-  const clearTimers = () => {
-    timers.current.forEach(clearTimeout)
-    timers.current = []
-  }
-
-  const openAssistant = useCallback(() => {
-    setOpen(true)
-    setState((s) => (s === "sleep" ? "wake" : s))
-  }, [])
-
-  const closeAssistant = useCallback(() => {
-    clearTimers()
-    setOpen(false)
-    setState("sleep")
-    setRawPrompt("")
-    setOptimized("")
-    setStats({ before: 0, after: 0 })
-  }, [])
-
-  const handleMicToggle = useCallback(() => {
-    clearTimers()
-    if (state === "listen") {
-      // stop -> think -> result
-      setState("think")
-      timers.current.push(
-        setTimeout(() => {
-          setOptimized(DEMO_OPTIMIZED)
-          setStats({ before: 58, after: 17 })
-          setState("wake")
-        }, 1900),
-      )
-      return
+    // idle float
+    if (state === "idle") {
+      ref.current.position.y = -1.4 + Math.sin(Date.now() * 0.002) * 0.05
+      ref.current.rotation.y = 0
     }
-    // start listening
-    setOptimized("")
-    setStats({ before: 0, after: 0 })
-    setRawPrompt("")
-    setState("listen")
-    // simulate transcript streaming in
-    const words = DEMO_RAW.split(" ")
-    words.forEach((_, i) => {
-      timers.current.push(
-        setTimeout(() => {
-          setRawPrompt(words.slice(0, i + 1).join(" "))
-        }, 120 * i),
-      )
-    })
-  }, [state])
 
-  const handleSend = useCallback(() => {
-    setState("wake")
-    closeAssistant()
-  }, [closeAssistant])
+    // thinking rotate
+    if (state === "thinking") {
+      ref.current.rotation.y += 0.01
+      ref.current.position.y = -1.4
+    }
+
+    // listening pulse
+    if (state === "listening") {
+      const scale = 0.6 + Math.sin(Date.now() * 0.01) * 0.02
+      ref.current.scale.setScalar(scale)
+      ref.current.position.y = -1.4
+    }
+  })
 
   return (
-    <div className="fixed right-4 top-4 z-50 flex flex-col items-end gap-3">
-      {/* floating cat trigger */}
-      <motion.button
-        layout
-        onClick={() => (open ? closeAssistant() : openAssistant())}
-        whileHover={{ scale: 1.06 }}
-        whileTap={{ scale: 0.92 }}
-        className="relative rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        aria-label={open ? "Close Mochi assistant" : "Wake Mochi assistant"}
-      >
-        <CatAvatar state={open ? state : "sleep"} size={84} />
-      </motion.button>
+    <group ref={ref} position={[0, -1.4, 0]} scale={0.6}>
+      <primitive object={scene} />
+    </group>
+  )
+}
 
-      {/* popup */}
-      <AnimatePresence>
-        {open && (
-          <PopupCard
-            state={state}
-            rawPrompt={rawPrompt}
-            optimizedPrompt={optimized}
-            stats={stats}
-            onMicToggle={handleMicToggle}
-            onSend={handleSend}
-            onClose={closeAssistant}
-          />
-        )}
-      </AnimatePresence>
+export default function FloatingAssistant() {
+  const [state, setState] = useState<StateType>("idle")
+
+  // drag state
+  const [pos, setPos] = useState({ x: 20, y: 20 })
+  const [dragging, setDragging] = useState(false)
+  const offset = useRef({ x: 0, y: 0 })
+
+  const cycleState = () => {
+    setState((prev) =>
+      prev === "idle"
+        ? "listening"
+        : prev === "listening"
+        ? "thinking"
+        : "idle"
+    )
+  }
+
+  // drag handlers
+  const onMouseDown = (e: React.MouseEvent) => {
+    setDragging(true)
+
+    offset.current = {
+      x: e.clientX - pos.x,
+      y: e.clientY - pos.y,
+    }
+  }
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragging) return
+
+    setPos({
+      x: e.clientX - offset.current.x,
+      y: e.clientY - offset.current.y,
+    })
+  }
+
+  const onMouseUp = () => {
+    setDragging(false)
+  }
+
+  return (
+    <div
+      onClick={cycleState}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      style={{
+        position: "fixed",
+        left: pos.x,
+        top: pos.y,
+        width: 170,
+        height: 170,
+        zIndex: 999999,
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        background: "transparent",
+      }}
+    >
+      <Canvas camera={{ position: [0, 1.5, 5.5], fov: 65 }}>
+        <ambientLight intensity={1.2} />
+        <directionalLight position={[2, 3, 2]} intensity={1} />
+
+        <CatModel state={state} />
+      </Canvas>
     </div>
   )
 }
